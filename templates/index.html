@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR"> 
+<head>
+  <meta charset="UTF-8">
+  <title>Gráfico Acelerômetro ESP32</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f7f7f7; padding: 30px; }
+    h1 { color: #333; }
+    #status { margin-bottom: 10px; font-weight: bold; }
+    canvas { max-width: 800px; margin: auto; display: block; background: #fff; padding: 15px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+  <h1>Gráfico em Tempo Real - Acelerômetro ESP32</h1>
+  <div id="status">Conectando...</div>
+  <canvas id="chart" width="800" height="400"></canvas>
+
+  <script>
+    const statusDiv = document.getElementById('status');
+    const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+    const ctx = document.getElementById('chart').getContext('2d');
+    const data = {
+      labels: [],
+      datasets: [
+        { label: 'X', borderColor: 'red', data: [], fill: false },
+        { label: 'Y', borderColor: 'green', data: [], fill: false },
+        { label: 'Z', borderColor: 'blue', data: [], fill: false }
+      ]
+    };
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: data,
+      options: { animation: false, responsive: true, scales: { y: { beginAtZero: false } } }
+    });
+
+    socket.onopen = () => {
+      statusDiv.innerText = '✅ Conectado ao servidor!';
+      statusDiv.style.color = 'green';
+    };
+
+    socket.onclose = () => {
+      statusDiv.innerText = '❌ Desconectado';
+      statusDiv.style.color = 'red';
+    };
+
+    socket.onmessage = (event) => {
+      const sensor = JSON.parse(event.data);
+      data.labels.push('');
+      data.datasets[0].data.push(sensor.x);
+      data.datasets[1].data.push(sensor.y);
+      data.datasets[2].data.push(sensor.z);
+
+      if (data.labels.length > 50) {
+        data.labels.shift();
+        data.datasets.forEach(d => d.data.shift());
+      }
+      chart.update();
+    };
+  </script>
+</body>
+</html>

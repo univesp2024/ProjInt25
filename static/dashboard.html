@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR"> 
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - Motor Único (ML)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{margin:0;font-family:"Segoe UI",sans-serif;background:#f3f4f6;display:flex;height:100vh;}
+.sidebar{width:300px;background:#1f2937;color:#fff;display:flex;flex-direction:column;padding:20px;}
+.sidebar h2{font-size:20px;margin-bottom:15px;border-bottom:2px solid #4b5563;padding-bottom:10px;}
+.info{margin-bottom:20px;font-size:15px;line-height:1.6;}
+.info span{font-weight:bold;color:#22d3ee;}
+.status-box{margin-top:15px;padding:10px;border-radius:10px;text-align:center;font-weight:bold;font-size:18px;transition:background .3s,color .3s;}
+.normal{background:#22c55e;color:white;}
+.anormal{background:#eab308;color:black;}
+.critico{background:#ef4444;color:white;}
+.buttons{margin-top:auto;display:flex;flex-direction:column;gap:10px;}
+.buttons button{padding:10px;border:none;border-radius:8px;background:#3b82f6;color:white;font-size:14px;cursor:pointer;transition:background .2s;}
+.buttons button:hover{background:#2563eb;}
+.main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;}
+canvas{width:90%;max-width:700px;height:220px!important;background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.1);margin-bottom:15px;}
+.config-panel{display:flex;flex-direction:column;align-items:center;background:white;padding:10px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.1);width:90%;max-width:700px;margin-bottom:20px;}
+.config-panel label{font-size:14px;margin-bottom:5px;}
+.config-panel input{width:80%;padding:5px;border:1px solid #ccc;border-radius:6px;text-align:center;margin-bottom:10px;}
+.trend{font-size:20px;margin-left:5px;}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>📊 Painel Motor</h2>
+  <div class="info">
+    <p>Oscilação Atual: <span id="oscValue">0%</span> <span id="trend" class="trend">→</span></p>
+    <p>Status ML: <span id="statusText">Normal</span></p>
+    <p>Status Previsto: <span id="predictedStatus">Normal</span></p>
+    <p>Acurácia ML: <span id="mlAccuracy">0%</span></p>
+    <p>G Base Atual: <span id="gValue">9.81</span></p>
+  </div>
+  <div id="statusBox" class="status-box normal">Normal</div>
+  <div class="buttons">
+    <button id="saveBtn">💾 Salvar CSV</button>
+    <button id="clearBtn">🧹 Limpar gráfico</button>
+    <button id="pauseBtn">⏸️ Pausar</button>
+    <button id="uploadBtn">📂 Enviar CSV (Treinar ML)</button>
+    <button onclick="window.location.href='index.html'">🏠 Página Principal</button>
+  </div>
+</div>
+
+<div class="main">
+  <canvas id="vibrationChart"></canvas>
+
+  <div class="config-panel">
+    <label for="thresholds">Limites (%)</label>
+    <input id="thresholds" type="text" value="30,75,100">
+    <small>Normal,Anormal,Crítico</small>
+
+    <label for="gInput">G base (m/s²)</label>
+    <input id="gInput" type="number" value="9.81" step="0.01">
+    <button id="setGbtn">⚙️ Aplicar G</button>
+
+    <input type="file" id="fileInput" style="display:none">
+  </div>
+</div>
+
+<script>
+// Elementos
+const oscValue=document.getElementById("oscValue");
+const statusBox=document.getElementById("statusBox");
+const statusText=document.getElementById("statusText");
+const trendIcon=document.getElementById("trend");
+const predictedStatusEl=document.getElementById("predictedStatus");
+const mlAccuracyEl=document.getElementById("mlAccuracy");
+const thresholdsInput=document.getElementById("thresholds");
+const saveBtn=document.getElementById("saveBtn");
+const clearBtn=document.getElementById("clearBtn");
+const pauseBtn=document.getElementById("pauseBtn");
+const gInput=document.getElementById("gInput");
+const gValueDisplay=document.getElementById("gValue");
+const setGbtn=document.getElementById("setGbtn");
+const uploadBtn=document.getElementById("uploadBtn");
+const fileInput=document.getElementById("fileInput");
+
+// Configurações
+let paused=false, csvData=[], gBase=9.81, prevValue=0;
+let [limitNormal, limitAnormal, limitCritico] = [30,75,100];
+let mlHistory=[]; // usado para ML simples
+
+// Gráfico
+const ctx=document.getElementById("vibrationChart").getContext("2d");
+const chartData={labels:[],datasets:[{label:"Oscilação (%)",data:[],borderColor:"#3b82f6",tension:0.3,borderWidth:2,pointRadius:0}]};
+const chart=new Chart(ctx,{type:"line",data:chartData,options:{responsive:true,animation:false,scales:{y:{min:0,max:100,title:{display:true,text:"%"}},x:{display:false}},plugins:{legend:{display:false}}}});
+
+// WebSocket
+const socket=new WebSocket(`ws://${window.location.hostname}:5000/ws`);
+socket.onmessage=(event)=>{
+  if(paused) return;
+  const sensor=JSON.parse(event.data);
+  const amplitude=Math.sqrt(sensor.x**2+sensor.y**2+sensor.z**2);
+  const diff=Math.abs(amplitude-gBase);
+  const perc=Math.min((diff/gBase)*100,100);
+  updateChart(perc);
+  updateStatus(perc);
+  updateTrend(perc);
+  updateMLPrediction(perc);
+  mlHistory.push(perc);
+};
+
+// Funções
+function updateChart(value){
+  chart.data.labels.push("");
+  chart.data.datasets[0].data.push(value);
+  if(chart.data.labels.length>40){chart.data.labels.shift(); chart.data.datasets[0].data.shift();}
+  chart.update();
+  csvData.push(value);
+  oscValue.textContent=value.toFixed(1)+"%";
+}
+
+function updateStatus(value){
+  [limitNormal, limitAnormal, limitCritico]=thresholdsInput.value.split(",").map(Number);
+  if(value<=limitNormal){
+    statusBox.className="status-box normal";
+    statusBox.textContent="Normal";
+    statusText.textContent="Normal";
+  }
+  else if(value<=limitAnormal){
+    statusBox.className="status-box anormal";
+    statusBox.textContent="Anormal";
+    statusText.textContent="Anormal";
+  }
+  else{
+    statusBox.className="status-box critico";
+    statusBox.textContent="Crítico ⚠️";
+    statusText.textContent="Crítico ⚠️";
+  }
+}
+
+function updateTrend(value){
+  trendIcon.textContent=value>prevValue?"↑":value<prevValue?"↓":"→";
+  prevValue=value;
+}
+
+// ML preditivo simples
+function updateMLPrediction(value){
+  const windowSize=10; // últimos 10 pontos
+  const recent=mlHistory.slice(-windowSize);
+  if(recent.length<2) return; // precisa de pelo menos 2 pontos
+  const avgChange=recent.reduce((sum,v,i,a)=>i>0?sum+v-a[i-1]:sum,0)/(recent.length-1);
+  const predicted=recent[recent.length-1]+avgChange;
+  let statusPred;
+  if(predicted<=limitNormal) statusPred="Normal";
+  else if(predicted<=limitAnormal) statusPred="Anormal";
+  else statusPred="Crítico ⚠️";
+  predictedStatusEl.textContent=statusPred;
+
+  // Acurácia baseada em últimos pontos vs status atual
+  let correct=0;
+  recent.forEach(v=>{
+    let s;
+    if(v<=limitNormal) s="Normal";
+    else if(v<=limitAnormal) s="Anormal";
+    else s="Crítico ⚠️";
+    if(s===statusText.textContent) correct++;
+  });
+  const accuracy=Math.round((correct/recent.length)*100);
+  mlAccuracyEl.textContent=accuracy+"%";
+}
+
+// Botões
+saveBtn.onclick=()=>{const csvContent="data:text/csv;charset=utf-8,"+csvData.join("\n");const link=document.createElement("a");link.setAttribute("href",encodeURI(csvContent));link.setAttribute("download","vibracoes.csv");link.click();}
+clearBtn.onclick=()=>{chart.data.labels=[];chart.data.datasets[0].data=[];chart.update();csvData=[]; mlHistory=[];}
+pauseBtn.onclick=()=>{paused=!paused;pauseBtn.textContent=paused?"▶️ Retomar":"⏸️ Pausar";}
+setGbtn.onclick=()=>{const newG=parseFloat(gInput.value);if(!isNaN(newG)&&newG>0){gBase=newG; gValueDisplay.textContent=gBase.toFixed(2); alert(`Novo G base: ${gBase.toFixed(2)} m/s²`);}else{alert("Valor inválido");}}
+uploadBtn.onclick=()=>fileInput.click();
+fileInput.onchange=()=>{const file=fileInput.files[0];if(file){const reader=new FileReader();reader.onload=e=>{const lines=e.target.result.split("\n").map(l=>parseFloat(l)).filter(v=>!isNaN(v));chart.data.labels=[];chart.data.datasets[0].data=[];chart.update();mlHistory=[];lines.forEach(v=>{updateChart(v); updateStatus(v); updateTrend(v); updateMLPrediction(v); mlHistory.push(v);}); alert("CSV carregado e plotado");};reader.readAsText(file);}};
+</script>
+
+</body>
+</html>
