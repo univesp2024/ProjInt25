@@ -1,5 +1,6 @@
 # Sistema de Monitoramento Preditivo de Motores (ESP32 + MPU6050 + WebSocket + Dashboard)
 Monitoramento de vibração em tempo real para manutenção preditiva no setor industrial. O dispositivo lê aceleração em três eixos, envia pacotes frequentes a um servidor que redistribui os dados para dashboards web, permitindo visualização ao vivo e criação de histórico para evolução a modelos de detecção de anomalia.
+Este projeto foi desenvolvido no contexto do Projeto Integrador da UNIVESP para o segundo sementre do ano de 2025, integrando conhecimentos de programação embarcada, comunicação em rede e análise de dados.
 
 ## Visão geral
 - Objetivo: antecipar falhas em motores reduzindo paradas não planejadas, via telemetria contínua de vibração e visualização em tempo real.
